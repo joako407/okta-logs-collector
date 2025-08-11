@@ -192,27 +192,24 @@ func (c *Okta) printEvents(events []okta.LogEvent) {
 // - event: A pointer to an okta.LogEvent object that need to be sanitized.
 func sanitizeUserIdentity(event *okta.LogEvent) {
 	if event.Actor != nil && *event.Actor.Type == "User" {
-		event.Actor.DisplayName = sanitizeString(event.Actor.DisplayName)
-		event.Actor.AlternateId = sanitizeString(event.Actor.AlternateId)
+		event.Actor.DisplayName = okta.PtrString(sanitizeString(*event.Actor.DisplayName))
+		event.Actor.AlternateId = okta.PtrString(sanitizeString(*event.Actor.AlternateId))
 	}
 
-	for i := range event.Target {
-		target := event.Target[i]
+	for i, target := range event.Target {
 		if target.Type != nil && *target.Type == "User" {
-			target.DisplayName = sanitizeString(target.DisplayName)
-			target.AlternateId = sanitizeString(target.AlternateId)
+			event.Target[i].DisplayName = okta.PtrString(sanitizeString(*target.DisplayName))
+			event.Target[i].AlternateId = okta.PtrString(sanitizeString(*target.AlternateId))
 		}
 	}
 }
 
 // sanitizeString takes a string s and returns a sanitized version of it.
 // It returns the first character, followed by ellipsis, and the last character.
-func sanitizeString(str *string) *string {
-	s := *str
+func sanitizeString(str string) string {
 	// If string is less than 3 chars, there is no reason to redact it.
-	if len(s) < 3 {
+	if len(str) < 3 {
 		return str
 	}
-	result := s[0:1] + "..." + s[len(s)-1:]
-	return &result
+	return str[0:1] + "..." + str[len(str)-1:]
 }
