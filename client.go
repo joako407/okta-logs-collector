@@ -7,17 +7,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/okta/okta-sdk-golang/v2/okta"
-	"github.com/okta/okta-sdk-golang/v2/okta/query"
+	"github.com/okta/okta-sdk-golang/v4/okta"
+	// "github.com/okta/okta-sdk-golang/v2/okta/query"
 	country_mapper "github.com/pirsquare/country-mapper"
 	"github.com/sirupsen/logrus"
 )
 
 type Okta struct {
-	client *okta.Client
-	ctx    context.Context
-
+	client *okta.APIClient
 	cfg           *Config
+	ctx            context.Context
 	countryMapper *country_mapper.CountryInfoClient
 }
 
@@ -43,18 +42,24 @@ func newCountryClient() *country_mapper.CountryInfoClient {
 
 // NewOktaClient initializes a new Okta client.
 func NewOktaClient(cfg *Config) *Okta {
-	ctx, client, err := okta.NewClient(context.Background(),
+	config, err := okta.NewConfiguration(
 		okta.WithOrgUrl(cfg.oktaURL),
 		okta.WithToken(cfg.apiKey),
 		okta.WithRequestTimeout(int64(cfg.requestTimeout.Seconds())),
 	)
+	if err != nil {
+		logrus.Fatalf("could not generate okta config: %s", err)
+	}
+
+	client := okta.NewAPIClient(config)
+
 	if err != nil {
 		logrus.Fatalf("could not initialize okta api client: %s", err)
 	}
 
 	return &Okta{
 		client:        client,
-		ctx:           ctx,
+		ctx:           context.Background(),
 		cfg:           cfg,
 		countryMapper: newCountryClient(),
 	}
@@ -63,11 +68,16 @@ func NewOktaClient(cfg *Config) *Okta {
 // PollSystemLogs polls the Okta system logs and logs the events ti stdout using logrus.
 // It polls the logs every `pollInterval`.
 func (c *Okta) PollSystemLogs() error {
-	since := time.Now().UTC().Add(-c.cfg.lookbackInterval).Format("2006-01-02T15:04:05.999Z")
-	events, resp, err := c.client.LogEvent.GetLogs(c.ctx, &query.Params{
-		Since:     since,
-		SortOrder: "ASCENDING",
-	})
+	since := time.Now().UTC().Add(-c.cfg.lookbackInterval)
+	// events, resp, err := c.client.LogEvent.GetLogs(c.ctx, &query.Params{
+	// 	Since:     since,
+	// 	SortOrder: "ASCENDING",
+	// })
+	events, resp, err := c.client.SystemLogAPI.
+		ListLogEvents(c.ctx).
+		Since(since).
+		SortOrder("ASCENDING").
+		Execute()
 
 	for {
 		if err != nil {
@@ -86,7 +96,7 @@ func (c *Okta) PollSystemLogs() error {
 		logrus.Debugf("sleeping %s until next poll", c.cfg.pollInterval)
 		time.Sleep(c.cfg.pollInterval)
 
-		resp, err = resp.Next(c.ctx, &events)
+		resp, err = resp.Next(c.ctx)
 	}
 
 	return fmt.Errorf("poll ended")
@@ -94,7 +104,7 @@ func (c *Okta) PollSystemLogs() error {
 
 // logRateLimits logs the rate limits from the Okta API response when
 // the remaining limit is less than 2.
-func (c *Okta) logRateLimits(resp *okta.Response) {
+func (c *Okta) logRateLimits(resp *okta.APIResponse) {
 	limit, err := strconv.Atoi(resp.Header.Get("X-Rate-Limit-Limit"))
 	if err != nil {
 		logrus.WithError(err).Error("could not parse rate limit")
@@ -122,15 +132,15 @@ func (c *Okta) logRateLimits(resp *okta.Response) {
 }
 
 // printEvents logs the events to stdout using logrus.
-func (c *Okta) printEvents(events []*okta.LogEvent) {
+func (c *Okta) printEvents(events []okta.LogEvent) {
 	for _, event := range events {
 		if event.Client != nil {
 			if event.Client.GeographicalContext != nil {
 				country := c.countryMapper.MapByName(
-					strings.TrimPrefix(event.Client.GeographicalContext.Country, "The "),
+					strings.TrimPrefix(*event.Client.GeographicalContext.Country, "The "),
 				)
 				if country != nil {
-					event.Client.GeographicalContext.Country = country.Alpha2
+					event.Client.GeographicalContext.Country = &country.Alpha2
 				}
 			}
 		}
@@ -152,10 +162,10 @@ func (c *Okta) printEvents(events []*okta.LogEvent) {
 		// is not a valid log level or is a debug event, we log the event as info.
 		// Otherwise, we log the event with the parsed log level.
 		// see https://developer.okta.com/docs/reference/api/system-log/#attributes
-		if strings.ToLower(event.Severity) == "debug" {
+		if strings.ToLower(*event.Severity) == "debug" {
 			logrus.WithTime(*event.Published).WithField("event", &event).Info("received event")
 		} else {
-			level, err := logrus.ParseLevel(event.Severity)
+			level, err := logrus.ParseLevel(*event.Severity)
 			if err != nil {
 				logrus.
 					WithError(err).
@@ -181,14 +191,14 @@ func (c *Okta) printEvents(events []*okta.LogEvent) {
 //
 // Parameters:
 // - event: A pointer to an okta.LogEvent object that need to be sanitized.
-func sanitizeUserIdentity(event *okta.LogEvent) {
-	if event.Actor != nil && event.Actor.Type == "User" {
+func sanitizeUserIdentity(event okta.LogEvent) {
+	if event.Actor != nil && *event.Actor.Type == "User" {
 		event.Actor.DisplayName = sanitizeString(event.Actor.DisplayName)
 		event.Actor.AlternateId = sanitizeString(event.Actor.AlternateId)
 	}
-
+	
 	for _, target := range event.Target {
-		if target.Type == "User" {
+		if *target.Type == "User" {
 			target.DisplayName = sanitizeString(target.DisplayName)
 			target.AlternateId = sanitizeString(target.AlternateId)
 		}
@@ -197,11 +207,12 @@ func sanitizeUserIdentity(event *okta.LogEvent) {
 
 // sanitizeString takes a string s and returns a sanitized version of it.
 // It returns the first character, followed by ellipsis, and the last character.
-func sanitizeString(str string) string {
+func sanitizeString(str *string) *string {
+	s := *str
 	// If string is less than 3 chars, there is no reason to redact it.
-	if len(str) < 3 {
+	if len(s) < 3 {
 		return str
 	}
-
-	return str[0:1] + "..." + str[len(str)-1:]
+	sanitized := s[0:1] + "..." + s[len(s)-1:]
+	return &sanitized
 }
