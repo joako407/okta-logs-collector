@@ -14,9 +14,9 @@ import (
 )
 
 type Okta struct {
-	client *okta.APIClient
+	client        *okta.APIClient
 	cfg           *Config
-	ctx            context.Context
+	ctx           context.Context
 	countryMapper *country_mapper.CountryInfoClient
 }
 
@@ -59,7 +59,6 @@ func NewOktaClient(cfg *Config) *Okta {
 
 	return &Okta{
 		client:        client,
-		ctx:           context.Background(),
 		cfg:           cfg,
 		countryMapper: newCountryClient(),
 	}
@@ -74,7 +73,7 @@ func (c *Okta) PollSystemLogs() error {
 	// 	SortOrder: "ASCENDING",
 	// })
 	events, resp, err := c.client.SystemLogAPI.
-		ListLogEvents(c.ctx).
+		ListLogEvents(c.client.GetConfig().Context).
 		Since(since).
 		SortOrder("ASCENDING").
 		Execute()
@@ -96,7 +95,7 @@ func (c *Okta) PollSystemLogs() error {
 		logrus.Debugf("sleeping %s until next poll", c.cfg.pollInterval)
 		time.Sleep(c.cfg.pollInterval)
 
-		resp, err = resp.Next(c.ctx)
+		resp, err = resp.Next(&events)
 	}
 
 	return fmt.Errorf("poll ended")
@@ -146,7 +145,7 @@ func (c *Okta) printEvents(events []okta.LogEvent) {
 		}
 
 		if c.cfg.sanitizeUserIdentity {
-			sanitizeUserIdentity(event)
+			sanitizeUserIdentity(&event)
 		}
 
 		// We have a lookback interval defined, which means that duplicate
@@ -191,14 +190,15 @@ func (c *Okta) printEvents(events []okta.LogEvent) {
 //
 // Parameters:
 // - event: A pointer to an okta.LogEvent object that need to be sanitized.
-func sanitizeUserIdentity(event okta.LogEvent) {
+func sanitizeUserIdentity(event *okta.LogEvent) {
 	if event.Actor != nil && *event.Actor.Type == "User" {
 		event.Actor.DisplayName = sanitizeString(event.Actor.DisplayName)
 		event.Actor.AlternateId = sanitizeString(event.Actor.AlternateId)
 	}
-	
-	for _, target := range event.Target {
-		if *target.Type == "User" {
+
+	for i := range event.Target {
+		target := event.Target[i]
+		if target.Type != nil && *target.Type == "User" {
 			target.DisplayName = sanitizeString(target.DisplayName)
 			target.AlternateId = sanitizeString(target.AlternateId)
 		}
@@ -213,6 +213,6 @@ func sanitizeString(str *string) *string {
 	if len(s) < 3 {
 		return str
 	}
-	sanitized := s[0:1] + "..." + s[len(s)-1:]
-	return &sanitized
+	result := s[0:1] + "..." + s[len(s)-1:]
+	return &result
 }
