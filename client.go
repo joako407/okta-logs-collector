@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -16,7 +15,6 @@ import (
 type Okta struct {
 	client        *okta.APIClient
 	cfg           *Config
-	ctx           context.Context
 	countryMapper *country_mapper.CountryInfoClient
 }
 
@@ -68,10 +66,6 @@ func NewOktaClient(cfg *Config) *Okta {
 // It polls the logs every `pollInterval`.
 func (c *Okta) PollSystemLogs() error {
 	since := time.Now().UTC().Add(-c.cfg.lookbackInterval)
-	// events, resp, err := c.client.LogEvent.GetLogs(c.ctx, &query.Params{
-	// 	Since:     since,
-	// 	SortOrder: "ASCENDING",
-	// })
 	events, resp, err := c.client.SystemLogAPI.
 		ListLogEvents(c.client.GetConfig().Context).
 		Since(since).

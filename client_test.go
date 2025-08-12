@@ -8,9 +8,8 @@ import (
 	"testing"
 	"time"
 
-	// "github.com/jarcoal/httpmock"
+	"github.com/jarcoal/httpmock"
 	"github.com/okta/okta-sdk-golang/v4/okta"
-	// "github.com/okta/okta-sdk-golang/v4/tests"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -389,38 +388,37 @@ func TestPollSystemLogs_invalid_token(t *testing.T) {
 	assert.Contains(t, err.Error(), "Unauthorized")
 }
 
-// func TestPollSystemLogs_mock(t *testing.T) {
-// 	config := &Config{
-// 		oktaURL:          "https://example.okta.com",
-// 		apiKey:           "your-api-key",
-// 		logLevel:         "info",
-// 		lookbackInterval: 24 * time.Hour,
-// 		requestTimeout:   10 * time.Second,
-// 		pollInterval:     5 * time.Second,
-// 	}
-// 	client := NewOktaClient(config)
-// 	assert.NotNil(t, client)
+func TestPollSystemLogs_mock(t *testing.T) {
+	config := &Config{
+		oktaURL:          "https://example.okta.com",
+		apiKey:           "your-api-key",
+		logLevel:         "info",
+		lookbackInterval: 24 * time.Hour,
+		requestTimeout:   10 * time.Second,
+		pollInterval:     5 * time.Second,
+	}
+	client := NewOktaClient(config)
+	assert.NotNil(t, client)
 
-// 	buf := bytes.NewBuffer(nil)
-// 	setupLogger(buf, config.logLevel)
+	buf := bytes.NewBuffer(nil)
+	setupLogger(buf, config.logLevel)
 
-// 	httpmock.Activate()
-// 	defer httpmock.DeactivateAndReset()
+	httpmock.Activate()
+	defer httpmock.DeactivateAndReset()
 
-// 	// Mock Okta logs endpoint
-// 	httpmock.RegisterResponder(
-// 		"GET",
-// 		"https://example.okta.com/api/v1/logs",
-// 		httpmock.File(`testdata/response.json`),
-// 	)
+	httpmock.RegisterResponder(
+		"GET",
+		"https://example.okta.com/api/v1/logs",
+		httpmock.NewJsonResponderOrPanic(200, httpmock.File(`testdata/response.json`)),
+	)
 
-// 	// Replace the underlying HTTP client with httpmock's
-// 	client.client.GetConfig().HTTPClient = &http.Client{Transport: httpmock.DefaultTransport}
+	// Replace the underlying HTTP client with httpmock's
+	client.client.GetConfig().HTTPClient = &http.Client{Transport: httpmock.DefaultTransport}
 
-// 	err := client.PollSystemLogs()
-// 	assert.Error(t, err)
-// 	assert.Contains(t, err.Error(), "poll ended")
-// }
+	err := client.PollSystemLogs()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "poll ended")
+}
 
 func TestSanitizeUserIdentity(t *testing.T) {
 	tests := []struct {
