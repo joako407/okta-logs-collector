@@ -4,7 +4,7 @@ go 1.22
 
 require (
 	github.com/jarcoal/httpmock v1.3.1
-	github.com/okta/okta-sdk-golang/v4 v4.1.2
+	github.com/okta/okta-sdk-golang/v5 v5.0.6
 	github.com/pirsquare/country-mapper v0.0.0-20180107162822-0fffc2d62977
 	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.10.0
